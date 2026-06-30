@@ -169,59 +169,78 @@ if 'identita_bloccata' not in st.session_state: st.session_state['identita_blocc
 
 st.title("⚽ Il Gioco degli Impostori")
 
-# --- FASE 1: LOBBY D'ATTESA ---
+# --- FASE 1: LOBBY D'ATTESA (Se la partita non è ancora iniziata) ---
 if not stato_globale["partita_in_corso"]:
     st.subheader("🎮 Fase 1: Entra nella Lobby")
     
+    # Inserimento nome del singolo giocatore (Stato locale del dispositivo)
     if not st.session_state['mio_nome']:
         nuovo_nome = st.text_input("Inserisci il tuo nome per partecipare:", key="input_nome_singolo").strip()
         if st.button("✅ Entra nella Stanza"):
+            # Aggiunge il nome alla lista globale condivisa sul server
             if nuovo_nome and nuovo_nome not in stato_globale["giocatori_connessi"]:
                 stato_globale["giocatori_connessi"].append(nuovo_nome)
                 st.session_state['mio_nome'] = nuovo_nome
                 st.rerun()
             elif nuovo_nome in stato_globale["giocatori_connessi"]:
-                st.error("Questo nome è già occupato!")
+                st.error("Questo nome è già occupato nella stanza!")
     else:
+        # Mostra il nome confermato e il tasto per uscire
         st.success(f"Sei dentro la stanza come: **{st.session_state['mio_nome']}**")
         if st.button("❌ Esci dalla Stanza"):
             stato_globale["giocatori_connessi"].remove(st.session_state['mio_nome'])
             st.session_state['mio_nome'] = None
             st.rerun()
 
+    # Visualizzazione lista giocatori connessi in tempo reale (Condivisa)
     st.markdown("<div class='lobby-box'>", unsafe_allow_html=True)
-    st.write(f"👥 **Giocatori in lobby ({len(stato_globale['giocatori_connessi'])}):**")
-    if stato_globale["giocatori_connessi"]: st.write(", ".join(stato_globale["giocatori_connessi"]))
-    else: st.italic("In attesa di giocatori...")
+    st.write(f"👥 **Giocatori pronti ({len(stato_globale['giocatori_connessi'])}):**")
+    if stato_globale["giocatori_connessi"]:
+        st.write(", ".join(stato_globale["giocatori_connessi"]))
+    else:
+        st.italic("In attesa che i giocatori si colleghino...")
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # --- AGGIUNTA: OPZIONE SELEZIONE IMPOSTORI (Compare solo se siete almeno in 6) ---
+    forza_due = True # Valore di default se siete in meno di 6
+    if len(stato_globale["giocatori_connessi"]) >= 6:
+        st.write("---")
+        forza_due = st.checkbox("⚽ Forza 2 Impostori per questo turno (consigliato)", value=True)
+
+    # Bottone di avvio (Visibile a tutti, basta che ci siano almeno 3 giocatori)
     if len(stato_globale["giocatori_connessi"]) >= 3:
         if st.button("🚀 AVVIA PARTITA PER TUTTI", type="primary"):
-            with st.spinner("L'IA sta estraendo il calciatore..."):
+            with st.spinner("L'IA sta estraendo il calciatore misterioso..."):
                 calciatore = genera_calciatore_con_ia()
                 lista_amici = stato_globale["giocatori_connessi"].copy()
                 random.shuffle(lista_amici)
                 
                 assegnazioni = {}
-                imp_da_mettere = 2 if len(lista_amici) >= 6 else 1
+                # Applica la scelta della casella se siete in 6 o più, altrimenti 1 solo
+                imp_da_mettere = 2 if (len(lista_amici) >= 6 and forza_due) else 1
                 
                 if imp_da_mettere == 1:
+                    # Assegna 1 Impostore con un indizio casuale
                     ind_casuale = random.choice([calciatore['indizio_identita'], calciatore['indizio_tecnico_aneddoto']])
                     assegnazioni[lista_amici.pop()] = {"ruolo": "IMPOSTORE", "dettaglio": ind_casuale}
                 else:
+                    # Assegna 2 Impostori con indizi diversi (Base e Dettaglio)
                     assegnazioni[lista_amici.pop()] = {"ruolo": "IMPOSTORE 1", "dettaglio": calciatore['indizio_identita']}
                     assegnazioni[lista_amici.pop()] = {"ruolo": "IMPOSTORE 2", "dettaglio": calciatore['indizio_tecnico_aneddoto']}
                 
+                # Assegna il ruolo di Fedele a tutti gli altri
                 for fedele in lista_amici:
                     assegnazioni[fedele] = {"ruolo": "FEDELE", "dettaglio": calciatore['nome']}
                 
+                # Aggiorna lo stato globale per far partire la partita su tutti i telefoni
                 stato_globale["calciatore_segreto"] = calciatore
                 stato_globale["assegnazioni"] = assegnazioni
                 stato_globale["partita_in_corso"] = True
                 st.rerun()
     else:
-        st.info("Servono almeno 3 giocatori.")
-        if st.button("🔄 Aggiorna Lista"): st.rerun()
+        st.info("Servono almeno 3 giocatori connessi per poter avviare la partita.")
+        if st.button("🔄 Aggiorna Lista"):
+            st.rerun()
 
 # --- FASE 2: GRIGLIA SUL CAMPO DA CALCIO & CARTE ---
 else:
