@@ -4,24 +4,69 @@ import json
 import time
 from groq import Groq
 
-# --- CONFIGURAZIONE PAGINA STREAMLIT ---
-st.set_page_config(page_title="Il Gioco degli Impostori", page_icon="⚽", layout="centered")
+# --- CONFIGURAZIONE INTERFACCIA E STILE CSS (CON CAMPO DA CALCIO) ---
+st.set_page_config(page_title="⚽ Lobby Impostori", page_icon="⚽", layout="centered")
 
-st.title("⚽ Il Gioco degli Impostori")
-st.write("Inserisci i giocatori, genera il calciatore segreto e scopri chi sono gli impostori!")
+st.markdown("""
+    <style>
+    /* Sfondo generale scuro */
+    .stApp { background-color: #0e1117; color: #ffffff; }
+    
+    /* Rettangolo che simula il campo da calcio per la griglia dei giocatori */
+    .campo-calcio {
+        background-color: #1b4314;
+        background-image: 
+            radial-gradient(circle at 50% 50%, transparent 0%, transparent 20%, rgba(255,255,255,0.15) 20%, rgba(255,255,255,0.15) 21%, transparent 21%),
+            linear-gradient(to right, rgba(255,255,255,0.1) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255,255,255,0.1) 1px, transparent 1px);
+        background-size: 100% 100%, 50px 50px, 50px 50px;
+        border: 4px solid #ffffff;
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: inset 0 0 30px rgba(0,0,0,0.6);
+        margin-top: 20px;
+        margin-bottom: 20px;
+    }
+    
+    /* Stile per le Card dei Ruoli sotto le immagini */
+    .card-fedele-default {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        padding: 25px; border-radius: 15px; border: 3px solid #00ffcc;
+        text-align: center; box-shadow: 0px 4px 15px rgba(0, 255, 204, 0.3);
+        margin-top: 15px;
+    }
+    .card-impostore-default {
+        background: linear-gradient(135deg, #3a0d0d 0%, #6b1111 100%);
+        padding: 25px; border-radius: 15px; border: 3px solid #ff3333;
+        text-align: center; box-shadow: 0px 4px 15px rgba(255, 51, 51, 0.3);
+        margin-top: 15px;
+    }
+    
+    /* Mattoncini dei giocatori arrotondati */
+    div.stButton > button {
+        width: 100%; background-color: #1f293d; color: #ffffff;
+        border: 2px solid #3b82f6; border-radius: 12px; padding: 14px;
+        font-weight: bold; font-size: 16px; transition: all 0.3s ease;
+    }
+    div.stButton > button:hover { background-color: #3b82f6; border-color: #00ffcc; transform: scale(1.02); }
+    .lobby-box { background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px dashed #30363d; margin-bottom: 15px; }
+    </style>
+""", unsafe_allow_html=True)
 
-# --- INIZIALIZZAZIONE MEMORIA DI STREAMLIT (SESSION STATE) ---
-# Usiamo st.session_state così i dati non si azzerano quando si cliccano i bottoni
-if 'ULTIMI_CALCIATORI' not in st.session_state:
-    st.session_state['ULTIMI_CALCIATORI'] = []
+# --- MEMORIA GLOBALE CONDIVISA (SERVER-SIDE) ---
+@st.cache_resource
+def ottieni_memoria_condivisa():
+    return {
+        "giocatori_connessi": [],
+        "partita_in_corso": False,
+        "assegnazioni": {},
+        "calciatore_segreto": None,
+        "ultimi_calciatori": [] # La memoria globale dei 150 calciatori usciti
+    }
 
-if 'partita_generata' not in st.session_state:
-    st.session_state['partita_generata'] = False
-    st.session_state['calciatore_segreto'] = None
-    st.session_state['assegnazioni'] = {}
+stato_globale = ottieni_memoria_condivisa()
 
 # --- CONFIGURAZIONE CLIENT GROQ SICURA ---
-# Cerca la chiave prima nei segreti di Streamlit (per il cloud) o usa le variabili d'ambiente
 if "GROQ_API_KEY" in st.secrets:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 else:
@@ -30,7 +75,7 @@ else:
     except Exception:
         st.warning("⚠️ Configura la chiave API di Groq nei Secrets di Streamlit.")
 
-# --- FUNZIONE GENERAZIONE CALCIATORE (IL TUO PROMPT BLINDATO) ---
+# --- FUNZIONE GENERAZIONE CALCIATORE ---
 def genera_calciatore_con_ia():
     modello_stabile = "llama-3.3-70b-versatile"
     
@@ -42,8 +87,8 @@ def genera_calciatore_con_ia():
     seed_casuale = random.randint(1, 999999)
     timestamp_unico = int(time.time() * 1000)
     
-    # Recuperiamo la memoria storica dei 150 elementi dallo stato di Streamlit
-    vietati_stringa = ", ".join(st.session_state['ULTIMI_CALCIATORI']) if st.session_state['ULTIMI_CALCIATORI'] else "Nessuno"
+    # Recuperiamo la memoria storica dei 150 elementi dallo STATO GLOBALE CONDIVISO
+    vietati_stringa = ", ".join(stato_globale['ultimi_calciatori']) if stato_globale['ultimi_calciatori'] else "Nessuno"
     
     prompt_scelta = f"""
     Scegli il nome di un calciatore famoso mondiale, attuale o una leggenda del passato. Principalmente scegliendo tra giocatori che hanno giocato almeno una 
@@ -75,11 +120,11 @@ def genera_calciatore_con_ia():
     Calciatore di questo turno: {calciatore_scelto}
     
     REGOLA DI SICUREZZA ASSOLUTA E VITALI:
-    - È SEVERAMENTE VIETATO includere il nome, il cognome o parti del nome del calciatore dentro gli indizi. 
+    - È SEVERAMENTE VIETATO INCLUDE il nome, il cognome o parti del nome del calciatore dentro gli indizi. 
     - Non usare i colori sociali della maglia (es. no 'Rossonero', no 'Bianconero' ma per Juve ad esempio Zebra).
     - Sii storicamente preciso ed EVITA soprannomi di altri calciatori.
 
-    Ad esempio se la nazionalità è Macedonia, dato che ci sono pochi giocatori macedoni, puoi dare un indizio in cui bisogna ragionare per capire che si tratta di quella nazione
+    Ad esempio se la nazionalità è Macedonia, dato che ci sono pochi giocatori macedoni, puoi dare un indizio in cui bisogna ragionare per capire che si trata di quella nazione
     come ad esempio "frutta" dato che è famosa la macedonia di frutta.
     
     Rispondi ESCLUSIVAMENTE con un oggetto JSON con queste tre chiavi precise:
@@ -108,73 +153,152 @@ def genera_calciatore_con_ia():
         indizio_id = dati.get('indizio_identita') or list(dati.values())[1] if len(dati) > 1 else "Campione"
         indizio_tec = dati.get('indizio_tecnico_aneddoto') or list(dati.values())[2] if len(dati) > 2 else "Fulmine"
         
-        # Aggiorna la memoria storica dei 150 elementi
-        if nome not in st.session_state['ULTIMI_CALCIATORI']:
-            st.session_state['ULTIMI_CALCIATORI'].append(nome)
-        if len(st.session_state['ULTIMI_CALCIATORI']) > 150:
-            st.session_state['ULTIMI_CALCIATORI'].pop(0)
+        # Aggiorna la memoria storica dei 150 elementi NELLO STATO GLOBALE CONDIVISO
+        if nome not in stato_globale['ultimi_calciatori']:
+            stato_globale['ultimi_calciatori'].append(nome)
+        if len(stato_globale['ultimi_calciatori']) > 150:
+            stato_globale['ultimi_calciatori'].pop(0)
             
         return {"nome": nome, "indizio_identita": indizio_id, "indizio_tecnico_aneddoto": indizio_tec}
     except Exception as e:
         return {"nome": calciatore_scelto, "indizio_identita": "Torre", "indizio_tecnico_aneddoto": "Velocità"}
 
-# --- INTERFACCIA UTENTE STREAMLIT ---
-# 1. Input della lista di amici
-nomi_inseriti = st.text_input("Inserisci i nomi dei giocatori separati da una virgola", "Elena, Alessandro, Matteo, Marco, Davide, Luca")
-lista_amici = [n.strip() for n in nomi_inseriti.split(",") if n.strip()]
+# --- STATO LOCALE DISPOSITIVO ---
+if 'mio_nome' not in st.session_state: st.session_state['mio_nome'] = None
+if 'identita_bloccata' not in st.session_state: st.session_state['identita_bloccata'] = False
 
-# 2. Selezione opzioni partita
-forza_due = st.checkbox("Forza 2 Impostori (richiede almeno 6 giocatori)", value=True)
+st.title("⚽ Il Gioco degli Impostori")
 
-# 3. Bottone per avviare la partita
-if st.button("🚀 GENERA NUOVA PARTITA", type="primary"):
-    if len(lista_amici) < 3:
-        st.error("Servono almeno 3 giocatori per avviare il gioco!")
+# --- FASE 1: LOBBY D'ATTESA ---
+if not stato_globale["partita_in_corso"]:
+    st.subheader("🎮 Fase 1: Entra nella Lobby")
+    
+    if not st.session_state['mio_nome']:
+        nuovo_nome = st.text_input("Inserisci il tuo nome per partecipare:", key="input_nome_singolo").strip()
+        if st.button("✅ Entra nella Stanza"):
+            if nuovo_nome and nuovo_nome not in stato_globale["giocatori_connessi"]:
+                stato_globale["giocatori_connessi"].append(nuovo_nome)
+                st.session_state['mio_nome'] = nuovo_nome
+                st.rerun()
+            elif nuovo_nome in stato_globale["giocatori_connessi"]:
+                st.error("Questo nome è già occupato!")
     else:
-        with st.spinner("L'IA sta scegliendo un calciatore misterioso..."):
-            calciatore = genera_calciatore_con_ia()
-            
-            num_giocatori = len(lista_amici)
-            impostori_da_inserire = 2 if (num_giocatori >= 6 and forza_due) else 1
-            
-            giocatori_casuali = lista_amici.copy()
-            random.shuffle(giocatori_casuali)
-            assegnazioni = {}
-            
-            if impostori_da_inserire == 1:
-                indizio_casuale = random.choice([calciatore['indizio_identita'], calciatore['indizio_tecnico_aneddoto']])
-                imp1 = giocatori_casuali.pop()
-                assegnazioni[imp1] = f"🕵️‍♂️ Sei l'IMPOSTORE! Il tuo indizio è: **{indizio_casuale}**"
-            elif impostori_da_inserire == 2:
-                imp1 = giocatori_casuali.pop()
-                assegnazioni[imp1] = f"🕵️‍♂️ Sei l'IMPOSTORE 1! Indizio Base: **{calciatore['indizio_identita']}**"
-                imp2 = giocatori_casuali.pop()
-                assegnazioni[imp2] = f"🕵️‍♂️ Sei l'IMPOSTORE 2! Indizio Dettaglio: **{calciatore['indizio_tecnico_aneddoto']}**"
+        st.success(f"Sei dentro la stanza come: **{st.session_state['mio_nome']}**")
+        if st.button("❌ Esci dalla Stanza"):
+            stato_globale["giocatori_connessi"].remove(st.session_state['mio_nome'])
+            st.session_state['mio_nome'] = None
+            st.rerun()
+
+    st.markdown("<div class='lobby-box'>", unsafe_allow_html=True)
+    st.write(f"👥 **Giocatori in lobby ({len(stato_globale['giocatori_connessi'])}):**")
+    if stato_globale["giocatori_connessi"]: st.write(", ".join(stato_globale["giocatori_connessi"]))
+    else: st.italic("In attesa di giocatori...")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if len(stato_globale["giocatori_connessi"]) >= 3:
+        if st.button("🚀 AVVIA PARTITA PER TUTTI", type="primary"):
+            with st.spinner("L'IA sta estraendo il calciatore..."):
+                calciatore = genera_calciatore_con_ia()
+                lista_amici = stato_globale["giocatori_connessi"].copy()
+                random.shuffle(lista_amici)
                 
-            for fedele in giocatori_casuali:
-                assegnazioni[fedele] = f"🟩 Sei un FEDELE. Il calciatore segreto è: **{calciatore['nome']}**"
+                assegnazioni = {}
+                imp_da_mettere = 2 if len(lista_amici) >= 6 else 1
+                
+                if imp_da_mettere == 1:
+                    ind_casuale = random.choice([calciatore['indizio_identita'], calciatore['indizio_tecnico_aneddoto']])
+                    assegnazioni[lista_amici.pop()] = {"ruolo": "IMPOSTORE", "dettaglio": ind_casuale}
+                else:
+                    assegnazioni[lista_amici.pop()] = {"ruolo": "IMPOSTORE 1", "dettaglio": calciatore['indizio_identita']}
+                    assegnazioni[lista_amici.pop()] = {"ruolo": "IMPOSTORE 2", "dettaglio": calciatore['indizio_tecnico_aneddoto']}
+                
+                for fedele in lista_amici:
+                    assegnazioni[fedele] = {"ruolo": "FEDELE", "dettaglio": calciatore['nome']}
+                
+                stato_globale["calciatore_segreto"] = calciatore
+                stato_globale["assegnazioni"] = assegnazioni
+                stato_globale["partita_in_corso"] = True
+                st.rerun()
+    else:
+        st.info("Servono almeno 3 giocatori.")
+        if st.button("🔄 Aggiorna Lista"): st.rerun()
+
+# --- FASE 2: GRIGLIA SUL CAMPO DA CALCIO & CARTE ---
+else:
+    if not st.session_state['identita_bloccata']:
+        st.subheader("🏟️ Seleziona il tuo mattoncino sul campo!")
+        
+        nomi_disponibili = stato_globale["giocatori_connessi"]
+        
+        # Apertura del contenitore grafico stile CAMPO DA CALCIO
+        st.markdown("<div class='campo-calcio'>", unsafe_allow_html=True)
+        
+        for i in range(0, len(nomi_disponibili), 2):
+            if i + 1 < len(nomi_disponibili):
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"🏃‍♂️ {nomi_disponibili[i]}", key=f"f2_{nomi_disponibili[i]}"):
+                        st.session_state['mio_nome'] = nomi_disponibili[i]; st.session_state['identita_bloccata'] = True; st.rerun()
+                with col2:
+                    if st.button(f"🏃‍♂️ {nomi_disponibili[i+1]}", key=f"f2_{nomi_disponibili[i+1]}"):
+                        st.session_state['mio_nome'] = nomi_disponibili[i+1]; st.session_state['identita_bloccata'] = True; st.rerun()
+            else:
+                c1, c2, c3 = st.columns([1, 2, 1])
+                with c2:
+                    if st.button(f"🏃‍♂️ {nomi_disponibili[i]}", key=f"f2_{nomi_disponibili[i]}"):
+                        st.session_state['mio_nome'] = nomi_disponibili[i]; st.session_state['identita_bloccata'] = True; st.rerun()
+                        
+        st.markdown("</div>", unsafe_allow_html=True) # Chiusura campo da calcio
+        
+    else:
+        # --- SCHERMATA COMPLETA E BLOCCATA SULLA CARD PERSONALE ---
+        mio_nome = st.session_state['mio_nome']
+        mio_ruolo = stato_globale["assegnazioni"].get(mio_nome)
+        
+        if mio_ruolo:
+            st.write(f"### 📱 Schermo bloccato su: **{mio_nome}**")
             
-            # Salviamo tutto nello stato sessione per non perderlo
-            st.session_state['calciatore_segreto'] = calciatore
-            st.session_state['assegnazioni'] = assegnazioni
-            st.session_state['partita_generata'] = True
+            if "IMPOSTORE" in mio_ruolo['ruolo']:
+                # Mostra direttamente l'immagine dell'impostore caricata su GitHub
+                st.image("impostore.png", use_container_width=True)
+                
+                # Testo e indizio sotto l'immagine
+                st.markdown(f"""
+                    <div class="card-impostore-default">
+                        <h2 style='color: #ff3333; margin: 0;'>🕵️‍♂️ {mio_ruolo['ruolo']}</h2>
+                        <p style='font-size: 16px; margin-top: 10px; color: #ffcccc;'>Il tuo indizio segreto è:</p>
+                        <h1 style='color: #ffffff; font-size: 34px; margin: 5px 0;'>{mio_ruolo['dettaglio']}</h1>
+                        <p style='font-size: 14px; color: #ffa3a3; font-style: italic;'>Infiltrati, bluffa e non farti scoprire!</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                # Mostra direttamente l'immagine del fedele caricata su GitHub
+                st.image("fedele.png", use_container_width=True)
+                
+                # Testo e calciatore sotto l'immagine
+                st.markdown(f"""
+                    <div class="card-fedele-default">
+                        <h2 style='color: #00ffcc; margin: 0;'>🟩 FEDELE</h2>
+                        <p style='font-size: 16px; margin-top: 10px; color: #ccfffa;'>Il calciatore misterioso è:</p>
+                        <h1 style='color: #ffffff; font-size: 34px; margin: 5px 0;'>{mio_ruolo['dettaglio']}</h1>
+                        <p style='font-size: 14px; color: #a3fff2; font-style: italic;'>Fai domande mirate per scovare gli impostori!</p>
+                    </div>
+                """, unsafe_allow_html=True)
+        
+        st.write("---")
+        if st.button("🛑 FINE PARTITA (Prossimo Giro)"):
+            stato_globale["partita_in_corso"] = False
+            stato_globale["assegnazioni"] = {}
+            stato_globale["calciatore_segreto"] = None
+            st.session_state['identita_bloccata'] = False
+            st.rerun()
 
-# --- VISUALIZZAZIONE RISULTATI ---
-if st.session_state['partita_generata']:
-    calc = st.session_state['calciatore_segreto']
-    
-    # Pannello di Controllo Master (Visibile solo a chi gestisce lo schermo)
-    with st.expander("👁️ PANNELLO MASTER (Nascondi agli altri giocatori)"):
-        st.write(f"**Calciatore Scelto:** {calc['nome']}")
-        st.write(f"**Indizio Identità:** {calc['indizio_identita']}")
-        st.write(f"**Indizio Tecnico:** {calc['indizio_tecnico_aneddoto']}")
-        st.caption(f"Memoria bloccati ({len(st.session_state['ULTIMI_CALCIATORI'])}/150): {st.session_state['ULTIMI_CALCIATORI'][-5:]}")
-
-    st.subheader("📱 Schermate dei Singoli Giocatori")
-    st.write("Passatevi il computer/telefono a turno. Clicca sul tuo nome per vedere la tua identità segreta senza farla vedere agli altri!")
-    
-    # Creiamo dei menu a tendina singoli (Expander) per ogni giocatore
-    for giocatore in lista_amici:
-        if giocatore in st.session_state['assegnazioni']:
-            with st.expander(f"👤 Schermata per: {giocatore}"):
-                st.large_text = st.markdown(f"### {st.session_state['assegnazioni'][giocatore]}")
+# --- 🤫 ACCESSO ULTRA-NASCOSTO AL PANNELLO MASTER ---
+st.write("---")
+codice_admin = st.text_input("⚙️", type="password", help="Pannello di controllo").strip()
+if codice_admin.lower() == "show" and stato_globale["calciatore_segreto"]:
+    st.markdown("### 👁️ Dati Segreti del Turno Corrente")
+    st.write(f"**Calciatore Scelto:** {stato_globale['calciatore_segreto']['nome']}")
+    st.write(f"**Indizio 1:** {stato_globale['calciatore_segreto']['indizio_identita']}")
+    st.write(f"**Indizio 2:** {stato_globale['calciatore_segreto']['indizio_tecnico_aneddoto']}")
+    st.caption(f"Memoria bloccati attuali: {len(stato_globale['ultimi_calciatori'])}/150")
