@@ -1,1 +1,2 @@
 groq
+google-genai
