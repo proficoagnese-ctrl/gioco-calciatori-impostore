@@ -3,7 +3,8 @@ import random
 import json
 import time
 import os
-from groq import Groq
+from google import genai
+from google.genai import types
 
 # --- CONFIGURAZIONE INTERFACCIA E STILE CSS ---
 st.set_page_config(page_title="⚽ Lobby Impostori", page_icon="⚽", layout="centered")
@@ -113,18 +114,18 @@ def ottieni_memoria_condivisa():
 
 stato_globale = ottieni_memoria_condivisa()
 
-# --- CONFIGURAZIONE CLIENT GROQ SICURA ---
-if "GROQ_API_KEY" in st.secrets:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+# --- CONFIGURAZIONE CLIENT GEMINI SICURA ---
+if "GEMINI_API_KEY" in st.secrets:
+    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 else:
     try:
-        client = Groq()
+        client = genai.Client()
     except Exception:
-        st.warning("⚠️ Configura la chiave API di Groq nei Secrets di Streamlit.")
+        st.warning("⚠️ Configura la chiave API di Gemini nei Secrets di Streamlit.")
 
-# --- FUNZIONE GENERAZIONE CALCIATORE (CON CODA PERSISTENTE A 300 ELEMENTI) ---
+# --- FUNZIONE GENERAZIONE CALCIATORE CON GEMINI (CON CODA PERSISTENTE A 300 ELEMENTI E INSTRUCTIONS AGGIORNATE) ---
 def genera_calciatore_con_ia():
-    modello_stabile = "llama-3.3-70b-versatile"
+    modello_stabile = "gemini-2.5-flash"
     
     lettere = ["A", "B", "C", "D", "E", "F", "G", "I", "L", "M", "N", "O", "P", "R", "S", "T", "V", "Z"]
     ruoli = ["Attaccante", "Centrocampista", "Difensore", "Portiere", "Leggenda del calcio"]
@@ -133,6 +134,28 @@ def genera_calciatore_con_ia():
     ruolo_scelto = random.choice(ruoli)
     seed_casuale = random.randint(1, 999999)
     timestamp_unico = int(time.time() * 1000)
+    
+    # Estrazione casuale dei dadi con Python per forzare la massima varietà ed evitare la pigrizia dell'IA
+    tipo_id = random.randint(1, 4)
+    tipo_aneddoto = random.randint(1, 5)
+    
+    tracce_identita = {
+        1: "FOCALIZZATI SU: Il NOME E COGNOME di un allenatore importante che lo ha allenato storicamente.",
+        2: "FOCALIZZATI SU: Un monumento, un simbolo, un animale dello stemma della squadra storica in cui ha giocato.",
+        3: "FOCALIZZATI SU: Un trofeo di squadra di altissimo livello unico o un record collettivo (es. se ha vinto il Triplete scrivi 'Triplete', oppure 'Champions', 'Scudetto', ecc.).",
+        4: "FOCALIZZATI SU: La Nazione di nascita. ATTENZIONE: Se la nazione ha pochissimi calciatori famosi (es. Macedonia, Giordania), NON nominarla, ma usa associazioni mentali o la capitale (es. Macedonia -> 'Frutta', Giordania -> 'Amman'). Usala direttamente (es. 'Argentina') solo se ha tantissimi campioni."
+    }
+    
+    tracce_aneddoto = {
+        1: "FOCALIZZATI SU: Una sua caratteristica estetica o fisica iconica (es. Rasta, Cresta, Occhiali, Cicatrice, Gigante, Pelato, Mancino, ecc.).",
+        2: "FOCALIZZATI SU: Un aneddoto ironico, una rima fonetica o un'onomatopea del suo celebre soprannome (es. Belotti -> 'Chicchirichì').",
+        3: "FOCALIZZATI SU: Il suo anno di nascita esatto.",
+        4: "FOCALIZZATI SU: Un titolo individuale importante vinto nella sua carriera (es. Scarpa d'oro, Pallone d'oro, Capocannoniere, MVP, Copa America, Mondiale).",
+        5: "FOCALIZZATI SU: Una parola secca sul suo ruolo o stile di gioco."
+    }
+    
+    traccia_id_scelta = tracce_identita[tipo_id]
+    traccia_aneddoto_scelta = tracce_aneddoto[tipo_aneddoto]
     
     # Recuperiamo la memoria storica dal nostro archivio reale
     vietati_stringa = ", ".join(stato_globale['ultimi_calciatori']) if stato_globale['ultimi_calciatori'] else "Nessuno"
@@ -150,52 +173,54 @@ def genera_calciatore_con_ia():
     """
     
     try:
-        res_scelta = client.chat.completions.create(
-            model=modello_stabile,
-            messages=[{"role": "user", "content": prompt_scelta}],
-            temperature=1.3 
-        )
-        calciatore_scelto = res_scelta.choices[0].message.content.strip().replace(".", "")
-    except Exception as e:
+        res_scelta = client.models.generate_content(model=modello_stabile, contents=prompt_scelta)
+        calciatore_scelto = res_scelta.text.strip().replace(".", "")
+    except Exception:
         calciatore_scelto = "Kylian Mbappé" 
         
     system_instruction = f"""
-    Sei il motore di un gioco d'ingegno sui calciatori in lingua italiana. 
-    Genera due indizi CORTISSIMI (da 1 a 3 parole al massimo) per il calciatore assegnato.
-    Rispondi SOLO in italiano.
+    Sei il motore di un gioco d'ingegno sui calciatori in lingua italiana. Il gioco è quello dell'impostore: tutti sanno il nome tranne due persone. Gli indizi devono essere originali, stimolanti e mai scontati.
     
-    Calciatore di questo turno: {calciatore_scelto}
+    🔥 REGOLA CRUCIALI PER IL JSON (NON INVERTIRE MAI LE CHIAVI):
+    - Nella chiave "nome" DEVI inserire ESCLUSIVAMENTE il nome del calciatore di questo turno, ovvero: {calciatore_scelto}. Non metterci allenatori o indizi!
+    - Nella chiave "indizio_identita" metti l'indizio richiesto dalla Traccia 1.
+    - Nella chiave "indizio_tecnico_aneddoto" metti l'indizio richiesto dalla Traccia 2.
     
-    REGOLA DI SICUREZZA ASSOLUTA E VITALI:
-    - È SEVERAMENTE VIETATO includere il nome, il cognome o parti del nome del calciatore dentro gli indizi. 
-    - Non usare i colori sociali della maglia (es. no 'Rossonero', no 'Bianconero' ma per Juve ad esempio Zebra).
-    - Sii storicamente preciso ed EVITA soprannomi di altri calciatori.
-
-    Ad esempio se la nazionalità è Macedonia, dato che ci sono pochi giocatori macedoni, puoi dare un indizio in cui bisogna ragionare per capire che si trata di quella nazione
-    come ad esempio "frutta" dato che è famosa la macedonia di frutta.
+    🚫 REGOLE DI SICUREZZA ASSOLUTE:
+    - È SEVERAMENTE VIETATO includere il nome, il cognome, il soprannome storico testuale o parti del nome del calciatore {calciatore_scelto} dentro gli indizi.
+    - Non usare i colori sociali letterali della maglia (es. no 'Rossonero', no 'Bianconero').
+    - Sii STORICAMENTE PRECISO ed EVITA ASSOLUTAMENTE soprannomi o aneddoti appartenenti ad altri calciatori. L'indizio deve essere vero e verificabile solo per il calciatore corrente.
     
-    Rispondi ESCLUSIVAMENTE con un oggetto JSON con queste tre chiavi precise:
+    🎯 DIRETTIVA DI GENERAZIONE MANDATORIA (LA TUA GUIDA PER QUESTO TURNO):
+    Per evitare ripetizioni e garantire la massima imprevedibilità, per questo specifico turno DEVI attenerti a queste linee guida estratte dal sistema:
+    1. Per 'indizio_identita': {traccia_id_scelta}
+    2. Per 'indizio_tecnico_aneddoto': {traccia_aneddoto_scelta}
+    
+    ⚠️ NOTA DI SALVAGUARDIA: Se la traccia estratta non si applica al 100% alla storia reale e verificabile di {calciatore_scelto}, o se hai dubbi storici, NON INVENTARE. Ripiega immediatamente su un suo titolo vinto, sul suo anno di nascita reale o su un sinonimo originale del suo ruolo (es. 'Regista', 'Muro', 'Bomber').
+    
+    Rispondi ESCLUSIVAMENTE con un oggetto JSON con questa struttura precisa (compila i valori con 1-3 parole):
     {{
         "nome": "{calciatore_scelto}",
-        "indizio_identita": "una parola sulla nazione o città storica in cui ha giocato (es. Tango, Torre, Colosseo, Vesuvio) usa simboli famosi, balli tradizionali, animali dello stemma della squadra, il motivo per cui la squadra è famosa o se è un giocatore che ha vinto il Triplete con una squadra puoi scrivere Triplete",
-        "indizio_tecnico_aneddoto": "una parola secca, un'associazione d'idee VERITIERA, un contrario o un aneddoto ironico, l'anno di nascita esatto, un suo celebre record o esatto soprannome reale (Senza mai usare il suo nome!)"
+        "indizio_identita": "inserisci qui l'indizio basato sulla traccia 1",
+        "indizio_tecnico_aneddoto": "inserisci qui l'indizio basato sulla traccia 2"
     }}
     
-    REGOLE DI STILE: massimo 1-3 parole secche, no frasi, no parentesi. Puoi usare parole singole, rime fonetiche, onomatopee (ad esempio per Andrea Belotti che viene chiamato Gallo puoi usare "Chicchirichì") o associazioni dirette.
+    REGOLE DI STILE: massimo 1-3 parole secche, no frasi, no parentesi. Sii criptico ma storicamente inattaccabile.
     """
 
     try:
-        completion = client.chat.completions.create(
+        # Chiamata nativa Gemini forzata in JSON strutturato
+        completion = client.models.generate_content(
             model=modello_stabile,
-            messages=[
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": f"Genera il JSON per {calciatore_scelto}."}
-            ],
-            temperature=1.1, 
-            response_format={"type": "json_object"}
+            contents=f"Genera l'oggetto JSON richiesto per il calciatore: {calciatore_scelto}",
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=1.0,
+                response_mime_type="application/json"
+            )
         )
         
-        dati = json.loads(completion.choices[0].message.content)
+        dati = json.loads(completion.text)
         nome = dati.get('nome', calciatore_scelto)
         indizio_id = dati.get('indizio_identita') or "Campione"
         indizio_tec = dati.get('indizio_tecnico_aneddoto') or "Fulmine"
@@ -212,7 +237,6 @@ def genera_calciatore_con_ia():
         return {"nome": nome, "indizio_identita": indizio_id, "indizio_tecnico_aneddoto": indizio_tec}
     except Exception as e:
         return {"nome": calciatore_scelto, "indizio_identita": "Torre", "indizio_tecnico_aneddoto": "Velocità"}
-
 # --- STATO LOCALE DISPOSITIVO ---
 if 'mio_nome' not in st.session_state: st.session_state['mio_nome'] = None
 if 'identita_bloccata' not in st.session_state: st.session_state['identita_bloccata'] = False
